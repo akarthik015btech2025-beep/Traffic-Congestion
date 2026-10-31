@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart Traffic Control Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef2f4;--panel:#fff;--ink:#12212b;--mute:#5b6b76;--line:#d5dee3;--map:#dfe6ea;--road:#44525c;--chev:rgba(255,255,255,.28);--accent:#0e7c86;--bad:#e5484d;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f171c;--panel:#172229;--ink:#e6eef2;--mute:#93a4af;--line:#26343d;--map:#1a262d;--road:#2e3d47;--chev:rgba(255,255,255,.16);--accent:#3cc4cf}}
+:root[data-theme="dark"]{--bg:#0f171c;--panel:#172229;--ink:#e6eef2;--mute:#93a4af;--line:#26343d;--map:#1a262d;--road:#2e3d47;--chev:rgba(255,255,255,.16);--accent:#3cc4cf}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 16px 40px}
+h1{font:700 clamp(24px,4vw,34px)/1.1 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 6px;letter-spacing:-.01em}
+p.sub{margin:0 0 18px;color:var(--mute);max-width:62ch}
+.grid{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:920px){.grid{grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+canvas{width:100%;height:auto;display:block;border-radius:8px;cursor:crosshair;background:var(--map)}
+.hint{color:var(--mute);font-size:13px;margin:8px 2px 0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+@media(min-width:560px){.stats{grid-template-columns:repeat(6,1fr)}}
+.stat{border-left:3px solid var(--accent);padding:2px 0 2px 10px}
+.stat b{display:block;font:700 22px/1.1 "Bricolage Grotesque",system-ui,sans-serif}
+.stat span{font-size:12px;color:var(--mute)}
+h2{font:700 17px/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 10px}
+label.sw{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
+label.sw input{margin-top:4px;width:18px;height:18px;accent-color:var(--accent)}
+label.sw small{display:block;color:var(--mute);font-size:12.5px;line-height:1.35}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+button,select{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button.p{background:var(--bad);border-color:var(--bad);color:#fff}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+ul#log{list-style:none;margin:0;padding:0;font-size:13px;color:var(--mute)}
+ul#log li{padding:3px 0;border-bottom:1px dashed var(--line)}
+.feat{margin:14px 0 0;padding-left:18px;font-size:13.5px}
+.feat li{margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Smart Traffic Control Simulator</h1>
+<p class="sub">A live city grid. Turn the smart features off to see how fixed timers, blocked roads and rush hour choke traffic, then turn them on and watch delays, idling and ambulance travel time drop.</p>
+<div class="grid">
+<div>
+<div class="card">
+<canvas id="c" aria-label="Traffic simulation of a nine-intersection city grid"></canvas>
+<p class="hint">Click any road to cause an accident. Car colour shows speed: green is free-flowing, red is stopped.</p>
+<div class="stats">
+<div class="stat"><b id="sp">0</b><span>Avg speed km/h</span></div>
+<div class="stat"><b id="qu">0</b><span>Cars stopped</span></div>
+<div class="stat"><b id="dl">0</b><span>Avg wait (s)</span></div>
+<div class="stat"><b id="co">0</b><span>Idle CO₂ (kg, est.)</span></div>
+<div class="stat"><b id="am">–</b><span>Ambulance trip (s)</span></div>
+<div class="stat"><b id="rr">0</b><span>Cars rerouted</span></div>
+</div>
+</div>
+</div>
+<div>
+<div class="card">
+<h2>Smart features</h2>
+<label class="sw"><input type="checkbox" data-k="adaptive" checked><span>Adaptive signals<small>Green goes to the road with the longer queue instead of a fixed 10 s timer.</small></span></label>
+<label class="sw"><input type="checkbox" data-k="reroute" checked><span>Accident rerouting<small>Cars turn off before a blocked road instead of waiting in the jam.</small></span></label>
+<label class="sw"><input type="checkbox" data-k="emerg" checked><span>Emergency green corridor<small>Lights turn green ahead of an ambulance, which also detours around crashes.</small></span></label>
+<label class="sw"><input type="checkbox" data-k="peak"><span>Peak-hour traffic<small>More than three times the normal number of vehicles.</small></span></label>
+<div class="btns">
+<button class="p" id="amb">Send ambulance</button>
+<button id="rnd">Random accident</button>
+<button id="clr">Clear accidents</button>
+<button id="rst">Reset</button>
+<select id="spd" aria-label="Simulation speed"><option value="1">1× speed</option><option value="2">2× speed</option><option value="4">4× speed</option></select>
+</div>
+</div>
+<div class="card" style="margin-top:16px">
+<h2>Event log</h2>
+<ul id="log"><li>Waiting for events…</li></ul>
+<ul class="feat">
+<li>Queue sensing at every junction drives signal timing.</li>
+<li>Incident detection reroutes traffic and reports the blocked road.</li>
+<li>Emergency vehicles get priority and a faster route.</li>
+<li>Live metrics estimate time and emissions saved.</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<script>
+(()=>{
+const C=document.getElementById('c'),g=C.getContext('2d'),W=720,H=480;
+C.width=W;C.height=H;
+const xs=[140,360,580],ys=[100,240,380],hd=[1,-1,1],vd=[1,-1,1];
+const RN=['Avenue A','Avenue B','Avenue C'],CN=['Street 1','Street 2','Street 3'];
+const S={adaptive:true,reroute:true,emerg:true,peak:false,speed:1};
+let cars=[],acc=[],t=0,spawnT=0,idle=0,uid=0,rer=0,exited=[],trips=[],logs=[];
+const nodes=xs.map(()=>ys.map(()=>({ph:Math.random()<.5?1:0,t:Math.random()*8,clear:0,next:0,pre:0})));
+const $=id=>document.getElementById(id);
+function say(m){logs.unshift(Math.floor(t)+'s  '+m);logs=logs.slice(0,5);$('log').innerHTML=logs.map(l=>'<li>'+l+'</li>').join('')}
+
+function spawn(type){
+  const h=Math.random()<.5,k=Math.floor(Math.random()*3);
+  const c=h?{x:hd[k]>0?-12:W+12,y:ys[k],dx:hd[k],dy:0,lane:k}:{x:xs[k],y:vd[k]>0?-12:H+12,dx:0,dy:vd[k],lane:k};
+  if(cars.some(o=>Math.abs(o.x-c.x)+Math.abs(o.y-c.y)<30))return false;
+  Object.assign(c,{h,v:40,type,vm:type==='a'?125:68+Math.random()*25,wait:0,age:0,id:++uid});
+  cars.push(c);return true;
+}
+function nextNode(c){
+  let b=null;
+  for(let k=0;k<3;k++){
+    const d=c.h?(xs[k]-c.x)*c.dx:(ys[k]-c.y)*c.dy;
+    if(d>0&&(!b||d<b.d))b=c.h?{i:k,j:c.lane,d}:{i:c.lane,j:k,d};
+  }
+  return b;
+}
+function blockedAhead(h,lane,dx,dy,fx,fy,max){
+  return acc.some(a=>{
+    if(a.h!==h||a.lane!==lane)return false;
+    const d=(a.x-fx)*dx+(a.y-fy)*dy;return d>0&&d<max;
+  });
+}
+function decideTurn(c,n){
+  const i=n.i,j=n.j,smart=S.reroute||(c.type==='a'&&S.emerg);
+  const blocked=smart&&blockedAhead(c.h,c.lane,c.dx,c.dy,xs[i],ys[j],260);
+  let turn=false;
+  if(blocked){
+    const nl=c.h?i:j,ndx=c.h?0:hd[j],ndy=c.h?vd[i]:0;
+    const nb=blockedAhead(!c.h,nl,c.h?0:hd[j],c.h?vd[i]:0,xs[i],ys[j],260);
+    if(!nb){turn=true;if(c.type!=='a'||true)rer++}
+  }else if(c.type!=='a'&&Math.random()<.2)turn=true;
+  if(!turn)return;
+  if(c.h){c.h=false;c.dx=0;c.dy=vd[i];c.x=xs[i];c.lane=i}
+  else{c.h=true;c.dy=0;c.dx=hd[j];c.y=ys[j];c.lane=j}
+}
+function addAcc(h,lane,p){
+  const co=h?xs:ys;
+  if(co.some(v=>Math.abs(p-v)<30)){say('Pick a spot between junctions');return}
+  if(acc.some(a=>a.h===h&&a.lane===lane&&Math.abs((h?a.x:a.y)-p)<60))return;
+  acc.push({h,lane,x:h?p:xs[lane],y:h?ys[lane]:p,until:t+22,name:(h?RN:CN)[lane]});
+  say('Accident on '+(h?RN:CN)[lane]+(S.reroute?' – rerouting traffic':' – no rerouting, queue forming'));
+}
+function step(dt){
+  t+=dt;
+  spawnT-=dt;
+  if(spawnT<=0&&cars.length<170){spawn('c');spawnT=(S.peak?.42:1.35)*(.6+Math.random()*.8)}
+  acc=acc.filter(a=>{if(a.until<=t){say(a.name+' cleared');return false}return true});
+  const q=nodes.map(r=>r.map(()=>[0,0])),em=nodes.map(r=>r.map(()=>-1));
+  cars.forEach(c=>{
+    c.n=nextNode(c);
+    if(c.n&&c.n.d<120&&c.v<18)q[c.n.i][c.n.j][c.h?0:1]++;
+    if(c.type==='a'&&S.emerg&&c.n&&c.n.d<230)em[c.n.i][c.n.j]=c.h?0:1;
+  });
+  nodes.forEach((r,i)=>r.forEach((s,j)=>{
+    s.t+=dt;
+    const e=em[i][j];s.pre=e>=0?1:0;
+    const sw=()=>{s.clear=.8;s.next=1-s.ph};
+    if(s.clear>0){s.clear-=dt;if(s.clear<=0){s.ph=s.next;s.t=0}return}
+    if(e>=0){if(s.ph!==e)sw();else s.t=0;return}
+    if(!S.adaptive){if(s.t>10)sw();return}
+    const a=q[i][j][s.ph],b=q[i][j][1-s.ph];
+    if((s.t>4&&(b>a+1||(a===0&&b>0)))||s.t>22)sw();
+  }));
+  cars.forEach(c=>{
+    let lim=c.vm;
+    for(const o of cars){
+      if(o===c||o.h!==c.h||o.lane!==c.lane||o.dx!==c.dx||o.dy!==c.dy)continue;
+      const gp=(o.x-c.x)*c.dx+(o.y-c.y)*c.dy;
+      if(gp>0&&gp<90)lim=Math.min(lim,Math.sqrt(2*130*Math.max(0,gp-22)));
+    }
+    for(const a of acc){
+      if(a.h!==c.h||a.lane!==c.lane)continue;
+      const gp=(a.x-c.x)*c.dx+(a.y-c.y)*c.dy;
+      if(gp>0&&gp<130)lim=Math.min(lim,Math.sqrt(2*130*Math.max(0,gp-28)));
+    }
+    if(c.n){
+      const s=nodes[c.n.i][c.n.j];
+      const green=s.clear<=0&&s.ph===(c.h?0:1);
+      if(!green&&c.n.d>14&&c.n.d<200)lim=Math.min(lim,Math.sqrt(2*130*Math.max(0,c.n.d-15)));
+    }
+    if(c.v>lim)c.v=Math.max(lim,c.v-260*dt);else c.v=Math.min(lim,c.v+70*dt);
+    c.x+=c.dx*c.v*dt;c.y+=c.dy*c.v*dt;c.age+=dt;
+    if(c.v<5){c.wait+=dt;idle+=dt}
+    if(c.n){
+      const d2=c.h?(xs[c.n.i]-c.x)*c.dx:(ys[c.n.j]-c.y)*c.dy;
+      if(d2<=0)decideTurn(c,c.n);
+    }
+  });
+  cars=cars.filter(c=>{
+    if(c.x<-40||c.x>W+40||c.y<-40||c.y>H+40){
+      if(c.type==='a'){trips.push(c.age);say('Ambulance cleared the city in '+c.age.toFixed(0)+' s')}
+      else{exited.push(c.wait);if(exited.length>60)exited.shift()}
+      return false;
+    }
+    return true;
+  });
+}
+function draw(){
+  const cs=getComputedStyle(document.documentElement),v=n=>cs.getPropertyValue(n).trim();
+  g.fillStyle=v('--map');g.fillRect(0,0,W,H);
+  g.lineCap='butt';g.strokeStyle=v('--road');g.lineWidth=26;
+  ys.forEach(y=>{g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()});
+  xs.forEach(x=>{g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke()});
+  g.fillStyle=v('--chev');
+  ys.forEach((y,j)=>{for(let x=30;x<W;x+=60){const d=hd[j];g.beginPath();g.moveTo(x-4*d,y-5);g.lineTo(x+4*d,y);g.lineTo(x-4*d,y+5);g.closePath();g.fill()}});
+  xs.forEach((x,i)=>{for(let y=30;y<H;y+=60){const d=vd[i];g.beginPath();g.moveTo(x-5,y-4*d);g.lineTo(x,y+4*d);g.lineTo(x+5,y-4*d);g.closePath();g.fill()}});
+  nodes.forEach((r,i)=>r.forEach((s,j)=>{
+    const gh=s.clear<=0&&s.ph===0,gv=s.clear<=0&&s.ph===1;
+    g.lineWidth=4;
+    const bx=xs[i]-hd[j]*16;g.strokeStyle=gh?'#2fbf71':'#e5484d';g.beginPath();g.moveTo(bx,ys[j]-13);g.lineTo(bx,ys[j]+13);g.stroke();
+    const by=ys[j]-vd[i]*16;g.strokeStyle=gv?'#2fbf71':'#e5484d';g.beginPath();g.moveTo(xs[i]-13,by);g.lineTo(xs[i]+13,by);g.stroke();
+    if(s.pre){g.strokeStyle='#4aa3ff';g.lineWidth=3;g.beginPath();g.arc(xs[i],ys[j],24,0,7);g.stroke()}
+  }));
+  cars.forEach(c=>{
+    g.save();g.translate(c.x,c.y);g.rotate(Math.atan2(c.dy,c.dx));
+    if(c.type==='a'){
+      const f=Math.floor(t*6)%2;
+      g.fillStyle=f?'rgba(229,72,77,.35)':'rgba(74,163,255,.35)';g.beginPath();g.arc(0,0,16,0,7);g.fill();
+      g.fillStyle='#fff';g.fillRect(-11,-5,22,10);
+      g.fillStyle='#e5484d';g.fillRect(-2,-4,4,8);g.fillRect(-5,-1.5,10,3);
+    }else{
+      g.fillStyle='hsl('+Math.round(Math.min(c.v/c.vm,1)*130)+',72%,50%)';
+      g.fillRect(-8,-4,16,8);
+    }
+    g.restore();
+  });
+  acc.forEach(a=>{
+    const p=1+.12*Math.sin(t*6);
+    g.fillStyle='#e5484d';g.beginPath();g.arc(a.x,a.y,11*p,0,7);g.fill();
+    g.fillStyle='#fff';g.font='bold 14px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText('!',a.x,a.y+1);
+  });
+}
+function stats(){
+  const n=cars.length||1,sp=cars.reduce((a,c)=>a+c.v,0)/n*.4;
+  $('sp').textContent=sp.toFixed(0);
+  $('qu').textContent=cars.filter(c=>c.v<5).length;
+  $('dl').textContent=exited.length?(exited.reduce((a,b)=>a+b,0)/exited.length).toFixed(1):'0';
+  $('co').textContent=(idle*.0007).toFixed(2);
+  $('am').textContent=trips.length?trips[trips.length-1].toFixed(0):'–';
+  $('rr').textContent=rer;
+}
+let last=performance.now(),sa=0;
+function frame(nw){
+  const dt=Math.min(.05,(nw-last)/1000);last=nw;
+  for(let k=0;k<S.speed;k++)step(dt);
+  draw();sa+=dt;if(sa>.4){sa=0;stats()}
+  requestAnimationFrame(frame);
+}
+C.onclick=e=>{
+  const r=C.getBoundingClientRect(),x=(e.clientX-r.left)*W/r.width,y=(e.clientY-r.top)*H/r.height;
+  let b=null;
+  ys.forEach((yy,j)=>{const d=Math.abs(y-yy);if(d<18&&(!b||d<b.d))b={d,h:true,l:j,p:x}});
+  xs.forEach((xx,i)=>{const d=Math.abs(x-xx);if(d<18&&(!b||d<b.d))b={d,h:false,l:i,p:y}});
+  if(b)addAcc(b.h,b.l,b.p);else say('Click directly on a road to place an accident');
+};
+document.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{S[el.dataset.k]=el.checked;say(el.parentNode.querySelector('span').firstChild.textContent+(el.checked?' on':' off'))});
+$('spd').onchange=e=>S.speed=+e.target.value;
+$('amb').onclick=()=>{for(let k=0;k<30;k++)if(spawn('a')){say('Ambulance dispatched');return}};
+$('rnd').onclick=()=>{const h=Math.random()<.5,l=Math.floor(Math.random()*3),co=h?xs:ys,k=Math.floor(Math.random()*2);addAcc(h,l,(co[k]+co[k+1])/2)};
+$('clr').onclick=()=>{acc=[];say('All accidents cleared')};
+$('rst').onclick=()=>{cars=[];acc=[];idle=0;rer=0;exited=[];trips=[];say('Simulation reset')};
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
